@@ -1,0 +1,93 @@
+import urllib.request
+import os
+import itertools
+import time
+
+def load_words():
+    """Downloads dictionary and returns a list of words."""
+    url = "https://raw.githubusercontent.com/dwyl/english-words/master/words_alpha.txt"
+    filename = "words_alpha.txt"
+
+    if not os.path.exists(filename):
+        print("Downloading dictionary... (approx 4MB)")
+        urllib.request.urlretrieve(url, filename)
+
+    with open(filename, 'r') as f:
+        # Filter: 3+ chars
+        return [w.strip().lower() for w in f if len(w.strip()) >= 3]
+
+
+def count_consonants(word):
+    vowels = set("aeiou")
+    return sum(1 for char in word if char not in vowels)
+
+
+def generate_anchored_matches(word_list):
+    """
+    Finds best words, strictly prioritizing words that start
+    with the first letter of the plate.
+    """
+    # Dictionary: Plate -> (Starts_With_Penalty, Length, Consonant_Count, Word)
+    best_matches = {}
+
+    print(f"Processing {len(word_list)} words with Anchor Logic...")
+
+    for word in word_list:
+        w_len = len(word)
+        w_cons = count_consonants(word)
+        chars = list(enumerate(word))
+
+        # Iterate all combinations of 3 letters (i < j < k)
+        for (i, c1), (j, c2), (k, c3) in itertools.combinations(chars, 3):
+            plate = c1 + c2 + c3
+
+            # --- SCORING LOGIC ---
+            # Penalty 0 if word starts with plate's first letter.
+            # Penalty 1 if it doesn't.
+            start_penalty = 0 if word.startswith(c1) else 1
+
+            # Create a score tuple (Lower is better for all values)
+            # 1. Start Penalty (Does it start with the right letter?)
+            # 2. Length (Is it short?)
+            # 3. Consonants (Is it simple?)
+            current_score = (start_penalty, w_len, w_cons)
+
+            # If this plate is new, or this word has a lower score than the existing best
+            if plate not in best_matches or current_score < best_matches[plate][:3]:
+                best_matches[plate] = (*current_score, word)
+
+    return best_matches
+
+
+def check_specific_plate(plate, matches):
+    plate = plate.lower()
+    if plate in matches:
+        data = matches[plate]
+        word = data[3]
+        penalty = data[0]
+        match_type = "PERFECT ANCHOR" if penalty == 0 else "Offset Match"
+        print(f"[{plate.upper()}] -> {word:<15} ({match_type})")
+    else:
+        print(f"[{plate.upper()}] -> (No match found)")
+
+
+if __name__ == "__main__":
+    t1 = time.time()
+    words = load_words()
+    matches = generate_anchored_matches(words)
+    end = time.time() - t1
+    print(f"Time Taken: {end}")
+    print("\n--- The 'Pizzas' Test ---")
+    # Demonstrating your specific feedback:
+    check_specific_plate("PZS", matches)  # Should be pizzas or prizes
+    check_specific_plate("ZZS", matches)  # Should NOT be pizzas (starts with P)
+
+    print("\n--- Common Plates ---")
+    check_specific_plate("SWM", matches)
+    check_specific_plate("LCN", matches)
+    check_specific_plate("TRK", matches)
+    check_specific_plate("XYZ", matches)  # Likely offset (starts with H usually)
+
+    print("\n--- Difficult 'Z' Plates ---")
+    check_specific_plate("ZZA", matches)
+    check_specific_plate("ZZB", matches)
