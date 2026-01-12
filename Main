@@ -1,0 +1,86 @@
+import math
+import itertools
+import time
+
+# --- Constants ---
+filepath='words.txt'
+CONSONANTS = {
+    'b', 'c', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'm',
+    'n', 'p', 'r', 's', 't', 'v', 'w', 'x', 'y', 'z'
+}
+OTHER_CHARS = {
+    'a', 'e', 'i', 'o', 'q', 'u'
+}
+
+def generate_license_plates():
+    plates = dict()
+    for combination in itertools.product(sorted(list(CONSONANTS)), repeat=3):
+        plates["".join(combination).upper()] = ("No Options", math.inf)
+    return plates
+
+
+def process_dict(plates):
+    with open(filepath, 'r', encoding='utf-8') as f:
+        for line in f:
+            word = line.strip()
+            # words should start with a possible character
+            if word[0] in CONSONANTS:
+                consonant_word = remove_other_characters(word[1:])
+                # score is based on number of consonants. Ideally you want just the ones in the plate, so three. We already know first is valid so remove subtract 2.
+                score = len(consonant_word)-2
+                if score >= 0:
+                    # get all license plates this could apply to
+                    permutations = get_permutations(consonant_word)
+                    for permutation in permutations:
+                        p = (word[0] + permutation).upper()
+                        if score < plates[p][1]:
+                            plates[p] = (word, score)
+                        elif score == plates[p][1]:
+                            if len(word) < len(plates[p][0]):
+                                plates[p] = (word, score)
+
+
+def remove_other_characters(word):
+    # removes vowels and qs
+    no_vowels = ""
+    for letter in word:
+        if letter not in OTHER_CHARS:
+            no_vowels += letter
+    return no_vowels
+
+
+def get_permutations(word):
+    # get all liscense plates this word could apply too
+    permutations = []
+    for i in range(len(word)-1):
+        for j in range(i+1, len(word)):
+            permutations.append(word[i] + word[j])
+    return permutations
+
+
+if __name__ == '__main__':
+    t1 = time.time()
+    lisense_plates = generate_license_plates()
+    process_dict(lisense_plates)
+    end = time.time() - t1
+    print(f"Time Taken: {end}")
+    print("\n--- Example Results ---")
+    print_examples = ['SWM', 'PPL', 'PZZ', 'TGR', 'PVC', 'PYC', 'PVZ', 'ZXY', 'RPR', 'BTS', 'BRT', 'RTR', 'LPR']
+    found_examples_count = 0
+    for plate in print_examples:
+        if plate in lisense_plates:
+            word, additional_consonants = lisense_plates[plate]
+            print(f"'{plate}' -> '{word}' (additional consonants: {additional_consonants})")
+            found_examples_count += 1
+
+    if found_examples_count == 0:
+        print("No specific examples found among the pre-defined ones.")
+
+    print("\n--- General Examples ---")
+    displayed_count = 0
+    for plate in sorted(lisense_plates.keys()):
+        if displayed_count >= 10000:
+            break
+        word, additional_consonants = lisense_plates[plate]
+        print(f"'{plate}' -> '{word}' (additional consonants: {additional_consonants})")
+        displayed_count += 1
