@@ -1,0 +1,229 @@
+# license_plate_words_ultimate_fix.py
+
+import os
+import itertools
+import time
+from collections import defaultdict
+
+# --- Constants ---
+
+CONSONANTS = {
+    'b', 'c', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'm',
+    'n', 'p', 'r', 's', 't', 'v', 'w', 'x', 'y', 'z'
+}
+
+
+# --- Dictionary Loading Function (Ultimate Fix with Full Candidate Collection) ---
+
+def load_dictionary_ultimate_fix(filepath='words.txt'):
+    """
+    Loads words and pre-processes them into a nested dictionary structure.
+    Correctly applies rules by collecting ALL valid matches for each
+    (LP0, LP1, LP2) combination and then selecting the best one.
+
+    Rules:
+    1. Word must START with LP0.
+    2. Fewest *additional consonants* between LP0, LP1, LP2.
+       An 'additional consonant' is any consonant character in the word
+       that is NOT one of the matched LP0, LP1, or LP2 characters (at their specific positions).
+    3. Alphabetical priority for tie-breaking.
+
+    The structure for final_preprocessed_dict is:
+    {
+        lp0_char: {
+            lp1_char: {
+                lp2_char: (best_additional_consonants_count, best_word)
+            }
+        }
+    }
+
+    Args:
+        filepath (str): The path to the dictionary file.
+
+    Returns:
+        dict: The pre-processed dictionary.
+              Returns an empty dict if the file is not found or an error occurs.
+    """
+    # temp_candidates will store lists of (additional_consonants_count, word)
+    # for each unique (lp0_found, lp1_found, lp2_found) sequence.
+    # We collect ALL of them here before sorting and selecting the best.
+    temp_candidates = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+
+    # final_preprocessed_dict will store the single best result for each (lp0, lp1, lp2) combination
+    # after all words have been processed and sorted.
+    final_preprocessed_dict = defaultdict(lambda: defaultdict(dict))
+
+    if not os.path.exists(filepath):
+        print(f"Error: Dictionary file not found at '{filepath}'")
+        print("Please ensure 'words.txt' is in the same directory as the script,")
+        print("or provide the correct full path to your dictionary file.")
+        print("On Linux/macOS, a common path is /usr/share/dict/words")
+        return {}
+
+    total_words_processed = 0
+    start_load_time = time.time()
+    print("Beginning aggressive dictionary pre-processing (ultimate fixed logic)...")
+
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            for line in f:
+                word = line.strip().lower()
+
+                # Basic filter: must be alphabetic and long enough for 3 consonants
+                if not word.isalpha() or len(word) < 3:
+                    continue
+
+                # LP0 MUST be the first character of the word and a consonant
+                lp0_char_in_word = word[0]
+                if lp0_char_in_word not in CONSONANTS:
+                    continue
+
+                idx0 = 0  # LP0 is always at index 0 of the word
+
+                total_words_processed += 1
+                if total_words_processed % 10000 == 0:
+                    print(f"  Processed {total_words_processed} words during dictionary load...")
+
+                # --- Core Logic: Find ALL (LP0, LP1, LP2) sequences and count additional consonants ---
+
+                # Iterate to find all possible LP1 positions
+                for idx1 in range(idx0 + 1, len(word)):
+                    lp1_char_in_word = word[idx1]
+                    if lp1_char_in_word not in CONSONANTS:
+                        continue
+
+                        # Calculate additional consonants between lp0_char_in_word and this lp1_char_in_word
+                    additional_consonants_0_1 = 0
+                    for i in range(idx0 + 1, idx1):  # Scan characters between LP0 and LP1
+                        # Only count if it's a consonant AND not one of the matched LP characters
+                        if word[i] in CONSONANTS and word[i] != lp0_char_in_word and word[i] != lp1_char_in_word:
+                            additional_consonants_0_1 += 1
+
+                    # Iterate to find all possible LP2 positions after this LP1
+                    for idx2 in range(idx1 + 1, len(word)):
+                        lp2_char_in_word = word[idx2]
+                        if lp2_char_in_word not in CONSONANTS:
+                            continue
+
+                            # Calculate additional consonants between lp1_char_in_word and this lp2_char_in_word
+                        additional_consonants_1_2 = 0
+                        for i in range(idx1 + 1, idx2):  # Scan characters between LP1 and LP2
+                            # Only count if it's a consonant AND not one of the matched LP characters
+                            if word[i] in CONSONANTS and word[i] != lp1_char_in_word and word[i] != lp2_char_in_word:
+                                additional_consonants_1_2 += 1
+
+                        # All three consonants (LP0, LP1, LP2) found in order!
+                        total_additional_consonants_for_path = additional_consonants_0_1 + additional_consonants_1_2
+
+                        # Store this candidate for the specific (LP0, LP1, LP2) combination
+                        temp_candidates[lp0_char_in_word][lp1_char_in_word][lp2_char_in_word].append(
+                            (total_additional_consonants_for_path, word)
+                        )
+                        # NO BREAK HERE. Continue searching for other LP2s from this LP1,
+                        # AND other LP1s from this LP0, and other LP0s in the word.
+                        # This ensures all possible sequences and their scores are captured.
+
+        print(f"Finished scanning {total_words_processed} words. Building final lookup table...")
+
+        # After processing all words, now select the BEST match for each (LP0, LP1, LP2) combo
+        for lp0_key, lp1_dict in temp_candidates.items():
+            for lp1_key, lp2_dict in lp1_dict.items():
+                for lp2_key, candidate_list in lp2_dict.items():
+                    # Sort candidates for this specific (lp0, lp1, lp2) combo:
+                    # 1. By additional_consonants_count (ascending)
+                    # 2. Then by word (alphabetical)
+                    candidate_list.sort()
+                    # Store only the best match (lowest score, then alphabetically first word)
+                    final_preprocessed_dict[lp0_key][lp1_key][lp2_key] = candidate_list[0]
+
+        end_load_time = time.time()
+        print(f"Dictionary pre-processing complete in {end_load_time - start_load_time:.2f} seconds.")
+
+    except Exception as e:
+        print(f"An error occurred while loading and pre-processing the dictionary: {e}")
+        import traceback
+        traceback.print_exc()
+        return {}
+
+    return final_preprocessed_dict
+
+
+# --- License Plate Generator Function (Unchanged) ---
+def generate_license_plates():
+    for combination in itertools.product(sorted(list(CONSONANTS)), repeat=3):
+        yield "".join(combination).upper()
+
+
+# --- Word Matching and Ranking Logic (Unchanged - benefits from correct pre-computation) ---
+def find_best_word_match_ultra_fast(license_plate, preprocessed_dictionary):
+    lp0 = license_plate[0].lower()
+    lp1 = license_plate[1].lower()
+    lp2 = license_plate[2].lower()
+
+    if lp0 in preprocessed_dictionary and \
+            lp1 in preprocessed_dictionary[lp0] and \
+            lp2 in preprocessed_dictionary[lp0][lp1]:
+
+        score, word = preprocessed_dictionary[lp0][lp1][lp2]
+        return word, score
+    else:
+        return None, float('inf')
+
+
+# --- Main Execution Block ---
+if __name__ == '__main__':
+    overall_start_time = time.time()
+    print("Starting License Plate Word Generator (Ultimate Fixed Version)...")
+
+    dictionary_data = load_dictionary_ultimate_fix('words.txt')
+    if not dictionary_data:
+        print("Exiting due to dictionary loading error.")
+        exit()
+
+    results = {}
+    total_plates = len(CONSONANTS) ** 3
+    processed_count = 0
+
+    print(f"\nMatching {total_plates} license plate combinations (this part will be fast)...")
+    processing_start_time = time.time()
+
+    for plate in generate_license_plates():
+        processed_count += 1
+        word_match, additional_consonants = find_best_word_match_ultra_fast(plate, dictionary_data)
+        if word_match:
+            results[plate] = (word_match, additional_consonants)
+
+        if processed_count % 1000 == 0 or processed_count == total_plates:
+            elapsed = time.time() - processing_start_time
+            print(
+                f"  Matched {processed_count}/{total_plates} plates ({processed_count / total_plates:.1%}) in {elapsed:.2f} seconds.")
+
+    processing_end_time = time.time()
+    overall_end_time = time.time()
+
+    print("\n--- Processing Complete ---")
+    print(f"License plate matching phase time: {processing_end_time - processing_start_time:.2f} seconds")
+    print(
+        f"Total program execution time (including dictionary load): {overall_end_time - overall_start_time:.2f} seconds")
+    print(f"Found matches for {len(results)} out of {total_plates} license plates.")
+
+    print("\n--- Example Results ---")
+    print_examples = ['SWM', 'PPL', 'PZZ', 'TGR', 'STR', 'BLD', 'GRN', 'ZXY', 'RPR', 'BTS', 'BRT', 'RTR', 'LPR']
+    found_examples_count = 0
+    for plate in print_examples:
+        if plate in results:
+            word, additional_consonants = results[plate]
+            print(f"'{plate}' -> '{word}' (additional consonants: {additional_consonants})")
+            found_examples_count += 1
+
+    if found_examples_count == 0:
+        print("No specific examples found among the pre-defined ones.")
+
+    print("\n--- General Examples (First 10 matches) ---")
+    displayed_count = 0
+    for plate in sorted(results.keys()):
+        if displayed_count >= 10:
+            break
+        word, additional_consonants = results[plate]
+        print(f"'{plate}' -> '{word}' (additional consonants: {additional_consonants})")
+        displayed_count += 1
